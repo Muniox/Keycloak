@@ -8,4 +8,5 @@ public sealed record UserInfoDto(
     string DisplayName,
     string GivenName,
     string FamilyName,
-    IReadOnlyCollection<string> Roles);
+    IReadOnlyCollection<string> Roles,
+    DateTimeOffset? SessionExpiresAt = null);

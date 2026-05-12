@@ -1,11 +1,13 @@
-using System.Security.Claims;
-using System.Text.Json;
 using Keycloak;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using StackExchange.Redis;
+using System.Security.Claims;
+using System.Text.Json;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,9 +20,39 @@ builder.Services
     .AddOptionsWithValidateOnStart<KeycloakAuthOptions>()
     .BindConfiguration(KeycloakAuthOptions.SectionName)
     .ValidateDataAnnotations()
-    .Validate(o => UrlHelper.IsLocalUrl(o.PostLogoutRedirectUri),
-        $"{KeycloakAuthOptions.SectionName}:{nameof(KeycloakAuthOptions.PostLogoutRedirectUri)} musi zaczynać się od '/'.");
+    .Validate(opt => UrlHelper.IsLocalUrl(opt.PostLogoutRedirectUri),
+       $"{KeycloakAuthOptions.SectionName}:{nameof(KeycloakAuthOptions.PostLogoutRedirectUri)} musi zaczynać się od '/'.")
+    .Validate(opt => System.Text.RegularExpressions.Regex.IsMatch(opt.SessionKeyNamespace, "^[a-z0-9][a-z0-9-]*$"), 
+        $"{KeycloakAuthOptions.SectionName}: {nameof(KeycloakAuthOptions.SessionKeyNamespace)} " +
+        $"musi być lowercase, alfanumeryczne, opcjonalnie z myślnikami.");
 
+// ── Redis ────────────────────────────────────────────────────
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var opts = sp.GetRequiredService<IOptions<KeycloakAuthOptions>>().Value;
+    return ConnectionMultiplexer.Connect(opts.RedisConnectionString);
+});
+
+builder.Services.AddStackExchangeRedisCache(_ => { });
+
+builder.Services
+    .AddOptions<RedisCacheOptions>()
+    .Configure<IServiceProvider>((options, sp) =>
+    {
+        var keycloak = sp.GetRequiredService<IOptions<KeycloakAuthOptions>>().Value;
+
+        // IDistributedCache traktuje InstanceName jako dosłowny prefix — bez separatora.
+        // Dlatego dorzucamy ":" tutaj, a walidacja SessionKeyNamespace zakazuje go w konfigu.
+        options.InstanceName = keycloak.SessionKeyNamespace + ":";
+        options.ConnectionMultiplexerFactory = () =>
+            Task.FromResult(sp.GetRequiredService<IConnectionMultiplexer>());
+    });
+
+builder.Services.AddSingleton<ITicketStore, RedisTicketStore>();
+
+builder.Services.AddHttpClient<KeycloakTokenClient>();
+
+// ── Authentication ───────────────────────────────────────────
 builder.Services
     .AddAuthentication(options =>
     {
@@ -32,8 +64,8 @@ builder.Services
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-        options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
-        options.SlidingExpiration = true;
+        options.SlidingExpiration = false;
+        options.Events.OnValidatePrincipal = KeycloakCookieEvents.OnValidatePrincipal;
         options.Events.OnRedirectToLogin = ctx =>
         {
             // BFF pattern: always return 401 instead of 302 redirect.
@@ -55,6 +87,17 @@ builder.Services
         options.SaveTokens = true;
         options.GetClaimsFromUserInfoEndpoint = true;
         options.MapInboundClaims = false;
+        // Ustaw ExpiresUtc cookie na lifetime refresh_tokena z Keycloaka.
+        options.Events.OnTokenResponseReceived = ctx =>
+        {
+            var refreshExpiresIn = ctx.TokenEndpointResponse?.GetParameter("refresh_expires_in");
+            if (int.TryParse(refreshExpiresIn, out var seconds) && seconds > 0)
+            {
+                ctx.Properties!.ExpiresUtc = DateTimeOffset.UtcNow.AddSeconds(seconds);
+            }
+            return Task.CompletedTask;
+        };
+        // Ekstrakcja ról
         options.Events.OnTokenValidated = ctx =>
         {
             if (ctx.Principal?.Identity is not ClaimsIdentity identity)
@@ -92,13 +135,15 @@ builder.Services
         options.TokenValidationParameters.RoleClaimType = "roles";
     });
 
+// ── Options binding dla auth handlers ────────────────────────
 builder.Services
     .AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
-    .Configure<IOptions<KeycloakAuthOptions>>((options, keycloakOptions) =>
+    .Configure<IOptions<KeycloakAuthOptions>, ITicketStore>((options, keycloakOptions, ticketStore) =>
     {
         var keycloak = keycloakOptions.Value;
 
         options.Cookie.Name = keycloak.CookieName;
+        options.SessionStore = ticketStore;
     });
 
 builder.Services
@@ -127,7 +172,11 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/auth/users/me", (ClaimsPrincipal user) => Results.Ok(user.ToUserInfoDto()))
+app.MapGet("/auth/users/me", async (ClaimsPrincipal user, HttpContext http) =>
+{
+    var auth = await http.AuthenticateAsync();
+    return Results.Ok(user.ToUserInfoDto(auth.Properties?.ExpiresUtc));
+})
     .RequireAuthorization()
     .Produces<UserInfoDto>();
 
