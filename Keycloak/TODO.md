@@ -6,10 +6,10 @@
    • Zrobione: lokalna sesja aplikacji (cookie + Redis ticket store) jest powiązana z lifetime tokenów z Keycloaka.
    • Zrobione: jeśli access_token wygaśnie, jest odnawiany przez refresh_token.
    • Zrobione: lifetime ciasteczka jest ustawiany na lifetime refresh_tokena z Keycloaka.
-   • Do zrobienia: backchannel logout.
-   • Do zrobienia: reakcja na unieważnienie sesji po stronie Keycloaka.
+   • Zrobione: backchannel logout (POST /auth/backchannel-logout, walidacja JWT + replay protection, wylogowuje ze wszystkich urządzeń po sub).
+   • Zrobione: reakcja na unieważnienie sesji po stronie Keycloaka (via backchannel logout).
 6. Jeśli użytkownik jest zalogowany odnawiać accesstoek poprzez refreshtoken (zrobione)
-7. dodać backchannel logout
+7. dodać backchannel logout (zrobione)
 8. wprowadzenie DTO /auth/users/me (w przyszłośći zmiana na bibliotekę i aplikacja integrująca bibliotekę powinna sama )
     zmieniać wygląd DTO) (zrobione)
 9. IUserInfoMapper<T> w DI — pozwolić konsumentowi biblioteki rejestrować własny mapper ClaimsPrincipal → TDto;

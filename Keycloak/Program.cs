@@ -48,7 +48,10 @@ builder.Services
             Task.FromResult(sp.GetRequiredService<IConnectionMultiplexer>());
     });
 
-builder.Services.AddSingleton<ITicketStore, RedisTicketStore>();
+builder.Services.AddSingleton<RedisTicketStore>();
+builder.Services.AddSingleton<ITicketStore>(sp => sp.GetRequiredService<RedisTicketStore>());
+
+builder.Services.AddSingleton<BackchannelLogoutTokenValidator>();
 
 builder.Services.AddHttpClient<KeycloakTokenClient>();
 
@@ -198,6 +201,38 @@ app.MapPost("/auth/logout", (ClaimsPrincipal user, IOptions<KeycloakAuthOptions>
         CookieAuthenticationDefaults.AuthenticationScheme,
         OpenIdConnectDefaults.AuthenticationScheme
     ]);
+});
+
+// OIDC Back-Channel Logout 1.0 — Keycloak woła ten endpoint przy unieważnieniu sesji po stronie IdP.
+// Wylogowuje usera ze wszystkich urządzeń w obrębie tej aplikacji (po sub). sid świadomie ignorujemy.
+app.MapPost("/auth/backchannel-logout", async (
+    HttpRequest request,
+    HttpResponse response,
+    BackchannelLogoutTokenValidator validator,
+    RedisTicketStore ticketStore,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("BackchannelLogout");
+    response.Headers.CacheControl = "no-store";
+
+    if (!request.HasFormContentType)
+        return Results.BadRequest(new { error = "invalid_request", error_description = "Wymagany Content-Type application/x-www-form-urlencoded." });
+
+    var form = await request.ReadFormAsync(ct);
+    var logoutToken = form["logout_token"].ToString();
+
+    var result = await validator.ValidateAsync(logoutToken, ct);
+    if (!result.IsValid)
+    {
+        logger.LogWarning("Backchannel logout odrzucony: {Code} {Description}", result.ErrorCode, result.ErrorDescription);
+        return Results.BadRequest(new { error = result.ErrorCode, error_description = result.ErrorDescription });
+    }
+
+    var removed = await ticketStore.RemoveAllUserSessionsAsync(result.Sub!);
+    logger.LogInformation("Backchannel logout: sub={Sub} jti={Jti} usunięto sesji={Count}", result.Sub, result.Jti, removed);
+
+    return Results.Ok();
 });
 
 app.Run();
