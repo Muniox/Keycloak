@@ -172,11 +172,7 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/auth/users/me", async (ClaimsPrincipal user, HttpContext http) =>
-{
-    var auth = await http.AuthenticateAsync();
-    return Results.Ok(user.ToUserInfoDto(auth.Properties?.ExpiresUtc));
-})
+app.MapGet("/auth/users/me", (ClaimsPrincipal user) => Results.Ok(user.ToUserInfoDto()))
     .RequireAuthorization()
     .Produces<UserInfoDto>();
 

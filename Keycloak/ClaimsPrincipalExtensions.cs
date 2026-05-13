@@ -4,7 +4,7 @@ namespace Keycloak;
 
 public static class ClaimsPrincipalExtensions
 {
-    public static UserInfoDto ToUserInfoDto(this ClaimsPrincipal user, DateTimeOffset? sessionExpiresAt = null)
+    public static UserInfoDto ToUserInfoDto(this ClaimsPrincipal user)
     {
         var identity = (ClaimsIdentity)user.Identity!;
 
@@ -16,7 +16,6 @@ public static class ClaimsPrincipalExtensions
             DisplayName: user.FindFirstValue("name") ?? "",
             GivenName: user.FindFirstValue("given_name") ?? "",
             FamilyName: user.FindFirstValue("family_name") ?? "",
-            Roles: user.FindAll(identity.RoleClaimType).Select(c => c.Value).ToArray(),
-            SessionExpiresAt: sessionExpiresAt);
+            Roles: user.FindAll(identity.RoleClaimType).Select(c => c.Value).ToArray());
     }
 }
