@@ -200,7 +200,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseForwardedHeaders();
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection(); nie wymuszamy w środku https, applikacja komunikuje się po http z nginx proxy manager
 app.UseAuthentication();
 app.UseAuthorization();
 
