@@ -1,0 +1,17 @@
+services:
+  bff-app:
+    build: .
+    image: bff-app:latest
+    container_name: bff-app
+    restart: unless-stopped
+    networks:
+      - public-ingress
+      - private-backend
+
+networks:
+  public-ingress:
+    name: public_net
+    external: true
+  private-backend:
+    name: internal_net
+    external: true
