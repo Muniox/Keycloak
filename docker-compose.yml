@@ -1,6 +1,6 @@
 services:
   bff-app:
-    build: .
+    build: ./Keycloak
     image: bff-app:latest
     container_name: bff-app
     restart: unless-stopped
