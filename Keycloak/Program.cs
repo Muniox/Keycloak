@@ -145,6 +145,18 @@ builder.Services
             return Task.CompletedTask;
         };
 
+        // TODO: tymczasowy debug ForwardedHeaders — usunąć po weryfikacji.
+        options.Events.OnRedirectToIdentityProvider = ctx =>
+        {
+            Console.WriteLine($"[OIDC-DEBUG] redirect_uri = {ctx.ProtocolMessage.RedirectUri}");
+            Console.WriteLine($"[OIDC-DEBUG] Scheme = {ctx.Request.Scheme}");
+            Console.WriteLine($"[OIDC-DEBUG] Host = {ctx.Request.Host}");
+            Console.WriteLine($"[OIDC-DEBUG] X-Forwarded-Proto = {ctx.Request.Headers["X-Forwarded-Proto"]}");
+            Console.WriteLine($"[OIDC-DEBUG] X-Forwarded-Host = {ctx.Request.Headers["X-Forwarded-Host"]}");
+            Console.WriteLine($"[OIDC-DEBUG] X-Forwarded-For = {ctx.Request.Headers["X-Forwarded-For"]}");
+            return Task.CompletedTask;
+        };
+
         options.Scope.Clear();
         options.Scope.Add("openid");
         options.Scope.Add("profile");
