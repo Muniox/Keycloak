@@ -7,6 +7,7 @@ using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using StackExchange.Redis;
+using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 
@@ -14,8 +15,9 @@ using System.Text.Json;
 var builder = WebApplication.CreateBuilder(args);
 
 // Apka stoi za nginx proxy manager — czytamy X-Forwarded-* żeby Request.Scheme=https
-// i cookie Secure działały. KnownProxies/Networks wyczyszczone bo NPM jest w innym
-// kontenerze (inne IP w sieci docker); bezpieczne dopóki apka nie ma `ports:` w compose.
+// i cookie Secure działały. Pusta lista zaufanych = middleware IGNORUJE nagłówki,
+// więc dodajemy pulę sieci docker (RFC 1918). Apka nie ma `ports:` w compose,
+// więc realnie dosięgnie ją tylko ruch z tej puli.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders =
@@ -24,6 +26,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         ForwardedHeaders.XForwardedHost;
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
+    options.KnownIPNetworks.Add(IPNetwork.Parse("172.16.0.0/12"));
 });
 
 // Add services to the container.
